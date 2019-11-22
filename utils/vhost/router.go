@@ -1,9 +1,14 @@
 package vhost
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"sync"
+)
+
+var (
+	ErrRouterConfigConflict = errors.New("router config conflict")
 )
 
 type VhostRouters struct {
@@ -14,7 +19,8 @@ type VhostRouters struct {
 type VhostRouter struct {
 	domain   string
 	location string
-	listener *Listener
+
+	payload interface{}
 }
 
 func NewVhostRouters() *VhostRouters {
@@ -23,9 +29,13 @@ func NewVhostRouters() *VhostRouters {
 	}
 }
 
-func (r *VhostRouters) Add(domain, location string, l *Listener) {
+func (r *VhostRouters) Add(domain, location string, payload interface{}) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if _, exist := r.exist(domain, location); exist {
+		return ErrRouterConfigConflict
+	}
 
 	vrs, found := r.RouterByDomain[domain]
 	if !found {
@@ -35,12 +45,13 @@ func (r *VhostRouters) Add(domain, location string, l *Listener) {
 	vr := &VhostRouter{
 		domain:   domain,
 		location: location,
-		listener: l,
+		payload:  payload,
 	}
 	vrs = append(vrs, vr)
 
 	sort.Sort(sort.Reverse(ByLocation(vrs)))
 	r.RouterByDomain[domain] = vrs
+	return nil
 }
 
 func (r *VhostRouters) Del(domain, location string) {
@@ -51,16 +62,13 @@ func (r *VhostRouters) Del(domain, location string) {
 	if !found {
 		return
 	}
-
-	for i, vr := range vrs {
-		if vr.location == location {
-			if len(vrs) > i+1 {
-				r.RouterByDomain[domain] = append(vrs[:i], vrs[i+1:]...)
-			} else {
-				r.RouterByDomain[domain] = vrs[:i]
-			}
+	newVrs := make([]*VhostRouter, 0)
+	for _, vr := range vrs {
+		if vr.location != location {
+			newVrs = append(newVrs, vr)
 		}
 	}
+	r.RouterByDomain[domain] = newVrs
 }
 
 func (r *VhostRouters) Get(host, path string) (vr *VhostRouter, exist bool) {
@@ -82,10 +90,7 @@ func (r *VhostRouters) Get(host, path string) (vr *VhostRouter, exist bool) {
 	return
 }
 
-func (r *VhostRouters) Exist(host, path string) (vr *VhostRouter, exist bool) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
+func (r *VhostRouters) exist(host, path string) (vr *VhostRouter, exist bool) {
 	vrs, found := r.RouterByDomain[host]
 	if !found {
 		return

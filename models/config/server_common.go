@@ -19,163 +19,272 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fatedier/frp/utils/util"
 	ini "github.com/vaughan0/go-ini"
+
+	"github.com/fatedier/frp/utils/util"
 )
 
-var ServerCommonCfg *ServerCommonConf
-
-// common config
+// ServerCommonConf contains information for a server service. It is
+// recommended to use GetDefaultServerConf instead of creating this object
+// directly, so that all unspecified fields have reasonable default values.
 type ServerCommonConf struct {
-	ConfigFile    string
-	BindAddr      string
-	BindPort      int64
-	KcpBindPort   int64
-	ProxyBindAddr string
+	// BindAddr specifies the address that the server binds to. By default,
+	// this value is "0.0.0.0".
+	BindAddr string `json:"bind_addr"`
+	// BindPort specifies the port that the server listens on. By default, this
+	// value is 7000.
+	BindPort int `json:"bind_port"`
+	// BindUdpPort specifies the UDP port that the server listens on. If this
+	// value is 0, the server will not listen for UDP connections. By default,
+	// this value is 0
+	BindUdpPort int `json:"bind_udp_port"`
+	// BindKcpPort specifies the KCP port that the server listens on. If this
+	// value is 0, the server will not listen for KCP connections. By default,
+	// this value is 0.
+	KcpBindPort int `json:"kcp_bind_port"`
+	// ProxyBindAddr specifies the address that the proxy binds to. This value
+	// may be the same as BindAddr. By default, this value is "0.0.0.0".
+	ProxyBindAddr string `json:"proxy_bind_addr"`
 
-	// If VhostHttpPort equals 0, don't listen a public port for http protocol.
-	VhostHttpPort int64
+	// VhostHttpPort specifies the port that the server listens for HTTP Vhost
+	// requests. If this value is 0, the server will not listen for HTTP
+	// requests. By default, this value is 0.
+	VhostHttpPort int `json:"vhost_http_port"`
 
-	// if VhostHttpsPort equals 0, don't listen a public port for https protocol
-	VhostHttpsPort int64
+	// VhostHttpsPort specifies the port that the server listens for HTTPS
+	// Vhost requests. If this value is 0, the server will not listen for HTTPS
+	// requests. By default, this value is 0.
+	VhostHttpsPort int `json:"vhost_https_port"`
 
-	// if DashboardPort equals 0, dashboard is not available
-	DashboardPort  int64
-	DashboardUser  string
-	DashboardPwd   string
-	AssetsDir      string
-	LogFile        string
-	LogWay         string // console or file
-	LogLevel       string
-	LogMaxDays     int64
-	PrivilegeMode  bool
-	PrivilegeToken string
-	AuthTimeout    int64
-	SubDomainHost  string
-	TcpMux         bool
+	// VhostHttpTimeout specifies the response header timeout for the Vhost
+	// HTTP server, in seconds. By default, this value is 60.
+	VhostHttpTimeout int64 `json:"vhost_http_timeout"`
 
-	// if PrivilegeAllowPorts is not nil, tcp proxies which remote port exist in this map can be connected
-	PrivilegeAllowPorts [][2]int64
-	MaxPoolCount        int64
-	HeartBeatTimeout    int64
-	UserConnTimeout     int64
+	// DashboardAddr specifies the address that the dashboard binds to. By
+	// default, this value is "0.0.0.0".
+	DashboardAddr string `json:"dashboard_addr"`
+
+	// DashboardPort specifies the port that the dashboard listens on. If this
+	// value is 0, the dashboard will not be started. By default, this value is
+	// 0.
+	DashboardPort int `json:"dashboard_port"`
+	// DashboardUser specifies the username that the dashboard will use for
+	// login. By default, this value is "admin".
+	DashboardUser string `json:"dashboard_user"`
+	// DashboardUser specifies the password that the dashboard will use for
+	// login. By default, this value is "admin".
+	DashboardPwd string `json:"dashboard_pwd"`
+	// AssetsDir specifies the local directory that the dashboard will load
+	// resources from. If this value is "", assets will be loaded from the
+	// bundled executable using statik. By default, this value is "".
+	AssetsDir string `json:"asserts_dir"`
+	// LogFile specifies a file where logs will be written to. This value will
+	// only be used if LogWay is set appropriately. By default, this value is
+	// "console".
+	LogFile string `json:"log_file"`
+	// LogWay specifies the way logging is managed. Valid values are "console"
+	// or "file". If "console" is used, logs will be printed to stdout. If
+	// "file" is used, logs will be printed to LogFile. By default, this value
+	// is "console".
+	LogWay string `json:"log_way"`
+	// LogLevel specifies the minimum log level. Valid values are "trace",
+	// "debug", "info", "warn", and "error". By default, this value is "info".
+	LogLevel string `json:"log_level"`
+	// LogMaxDays specifies the maximum number of days to store log information
+	// before deletion. This is only used if LogWay == "file". By default, this
+	// value is 0.
+	LogMaxDays int64 `json:"log_max_days"`
+	// DisableLogColor disables log colors when LogWay == "console" when set to
+	// true. By default, this value is false.
+	DisableLogColor bool `json:"disable_log_color"`
+	// Token specifies the authorization token used to authenticate keys
+	// received from clients. Clients must have a matching token to be
+	// authorized to use the server. By default, this value is "".
+	Token string `json:"token"`
+	// SubDomainHost specifies the domain that will be attached to sub-domains
+	// requested by the client when using Vhost proxying. For example, if this
+	// value is set to "frps.com" and the client requested the subdomain
+	// "test", the resulting URL would be "test.frps.com". By default, this
+	// value is "".
+	SubDomainHost string `json:"subdomain_host"`
+	// TcpMux toggles TCP stream multiplexing. This allows multiple requests
+	// from a client to share a single TCP connection. By default, this value
+	// is true.
+	TcpMux bool `json:"tcp_mux"`
+	// Custom404Page specifies a path to a custom 404 page to display. If this
+	// value is "", a default page will be displayed. By default, this value is
+	// "".
+	Custom404Page string `json:"custom_404_page"`
+
+	// AllowPorts specifies a set of ports that clients are able to proxy to.
+	// If the length of this value is 0, all ports are allowed. By default,
+	// this value is an empty set.
+	AllowPorts map[int]struct{}
+	// MaxPoolCount specifies the maximum pool size for each proxy. By default,
+	// this value is 5.
+	MaxPoolCount int64 `json:"max_pool_count"`
+	// MaxPortsPerClient specifies the maximum number of ports a single client
+	// may proxy to. If this value is 0, no limit will be applied. By default,
+	// this value is 0.
+	MaxPortsPerClient int64 `json:"max_ports_per_client"`
+	// HeartBeatTimeout specifies the maximum time to wait for a heartbeat
+	// before terminating the connection. It is not recommended to change this
+	// value. By default, this value is 90.
+	HeartBeatTimeout int64 `json:"heart_beat_timeout"`
+	// UserConnTimeout specifies the maximum time to wait for a work
+	// connection. By default, this value is 10.
+	UserConnTimeout int64 `json:"user_conn_timeout"`
 }
 
-func GetDefaultServerCommonConf() *ServerCommonConf {
-	return &ServerCommonConf{
-		ConfigFile:       "./frps.ini",
-		BindAddr:         "0.0.0.0",
-		BindPort:         7000,
-		KcpBindPort:      0,
-		ProxyBindAddr:    "0.0.0.0",
-		VhostHttpPort:    0,
-		VhostHttpsPort:   0,
-		DashboardPort:    0,
-		DashboardUser:    "admin",
-		DashboardPwd:     "admin",
-		AssetsDir:        "",
-		LogFile:          "console",
-		LogWay:           "console",
-		LogLevel:         "info",
-		LogMaxDays:       3,
-		PrivilegeMode:    true,
-		PrivilegeToken:   "",
-		AuthTimeout:      900,
-		SubDomainHost:    "",
-		TcpMux:           true,
-		MaxPoolCount:     5,
-		HeartBeatTimeout: 90,
-		UserConnTimeout:  10,
+// GetDefaultServerConf returns a server configuration with reasonable
+// defaults.
+func GetDefaultServerConf() ServerCommonConf {
+	return ServerCommonConf{
+		BindAddr:          "0.0.0.0",
+		BindPort:          7000,
+		BindUdpPort:       0,
+		KcpBindPort:       0,
+		ProxyBindAddr:     "0.0.0.0",
+		VhostHttpPort:     0,
+		VhostHttpsPort:    0,
+		VhostHttpTimeout:  60,
+		DashboardAddr:     "0.0.0.0",
+		DashboardPort:     0,
+		DashboardUser:     "admin",
+		DashboardPwd:      "admin",
+		AssetsDir:         "",
+		LogFile:           "console",
+		LogWay:            "console",
+		LogLevel:          "info",
+		LogMaxDays:        3,
+		DisableLogColor:   false,
+		Token:             "",
+		SubDomainHost:     "",
+		TcpMux:            true,
+		AllowPorts:        make(map[int]struct{}),
+		MaxPoolCount:      5,
+		MaxPortsPerClient: 0,
+		HeartBeatTimeout:  90,
+		UserConnTimeout:   10,
+		Custom404Page:     "",
 	}
 }
 
-// Load server common configure.
-func LoadServerCommonConf(conf ini.File) (cfg *ServerCommonConf, err error) {
+// UnmarshalServerConfFromIni parses the contents of a server configuration ini
+// file and returns the resulting server configuration.
+func UnmarshalServerConfFromIni(content string) (cfg ServerCommonConf, err error) {
+	cfg = GetDefaultServerConf()
+
+	conf, err := ini.Load(strings.NewReader(content))
+	if err != nil {
+		err = fmt.Errorf("parse ini conf file error: %v", err)
+		return ServerCommonConf{}, err
+	}
+
 	var (
 		tmpStr string
 		ok     bool
 		v      int64
 	)
-	cfg = GetDefaultServerCommonConf()
-
-	tmpStr, ok = conf.Get("common", "bind_addr")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "bind_addr"); ok {
 		cfg.BindAddr = tmpStr
 	}
 
-	tmpStr, ok = conf.Get("common", "bind_port")
-	if ok {
-		v, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err == nil {
-			cfg.BindPort = v
+	if tmpStr, ok = conf.Get("common", "bind_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid bind_port")
+			return
+		} else {
+			cfg.BindPort = int(v)
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "kcp_bind_port")
-	if ok {
-		v, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err == nil && v > 0 {
-			cfg.KcpBindPort = v
+	if tmpStr, ok = conf.Get("common", "bind_udp_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid bind_udp_port")
+			return
+		} else {
+			cfg.BindUdpPort = int(v)
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "proxy_bind_addr")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "kcp_bind_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid kcp_bind_port")
+			return
+		} else {
+			cfg.KcpBindPort = int(v)
+		}
+	}
+
+	if tmpStr, ok = conf.Get("common", "proxy_bind_addr"); ok {
 		cfg.ProxyBindAddr = tmpStr
 	} else {
 		cfg.ProxyBindAddr = cfg.BindAddr
 	}
 
-	tmpStr, ok = conf.Get("common", "vhost_http_port")
-	if ok {
-		cfg.VhostHttpPort, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err != nil {
-			err = fmt.Errorf("Parse conf error: vhost_http_port is incorrect")
+	if tmpStr, ok = conf.Get("common", "vhost_http_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid vhost_http_port")
 			return
+		} else {
+			cfg.VhostHttpPort = int(v)
 		}
 	} else {
 		cfg.VhostHttpPort = 0
 	}
 
-	tmpStr, ok = conf.Get("common", "vhost_https_port")
-	if ok {
-		cfg.VhostHttpsPort, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err != nil {
-			err = fmt.Errorf("Parse conf error: vhost_https_port is incorrect")
+	if tmpStr, ok = conf.Get("common", "vhost_https_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid vhost_https_port")
 			return
+		} else {
+			cfg.VhostHttpsPort = int(v)
 		}
 	} else {
 		cfg.VhostHttpsPort = 0
 	}
 
-	tmpStr, ok = conf.Get("common", "dashboard_port")
-	if ok {
-		cfg.DashboardPort, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err != nil {
-			err = fmt.Errorf("Parse conf error: dashboard_port is incorrect")
+	if tmpStr, ok = conf.Get("common", "vhost_http_timeout"); ok {
+		v, errRet := strconv.ParseInt(tmpStr, 10, 64)
+		if errRet != nil || v < 0 {
+			err = fmt.Errorf("Parse conf error: invalid vhost_http_timeout")
 			return
+		} else {
+			cfg.VhostHttpTimeout = v
+		}
+	}
+
+	if tmpStr, ok = conf.Get("common", "dashboard_addr"); ok {
+		cfg.DashboardAddr = tmpStr
+	} else {
+		cfg.DashboardAddr = cfg.BindAddr
+	}
+
+	if tmpStr, ok = conf.Get("common", "dashboard_port"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid dashboard_port")
+			return
+		} else {
+			cfg.DashboardPort = int(v)
 		}
 	} else {
 		cfg.DashboardPort = 0
 	}
 
-	tmpStr, ok = conf.Get("common", "dashboard_user")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "dashboard_user"); ok {
 		cfg.DashboardUser = tmpStr
 	}
 
-	tmpStr, ok = conf.Get("common", "dashboard_pwd")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "dashboard_pwd"); ok {
 		cfg.DashboardPwd = tmpStr
 	}
 
-	tmpStr, ok = conf.Get("common", "assets_dir")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "assets_dir"); ok {
 		cfg.AssetsDir = tmpStr
 	}
 
-	tmpStr, ok = conf.Get("common", "log_file")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "log_file"); ok {
 		cfg.LogFile = tmpStr
 		if cfg.LogFile == "console" {
 			cfg.LogWay = "console"
@@ -184,74 +293,77 @@ func LoadServerCommonConf(conf ini.File) (cfg *ServerCommonConf, err error) {
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "log_level")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "log_level"); ok {
 		cfg.LogLevel = tmpStr
 	}
 
-	tmpStr, ok = conf.Get("common", "log_max_days")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "log_max_days"); ok {
 		v, err = strconv.ParseInt(tmpStr, 10, 64)
 		if err == nil {
 			cfg.LogMaxDays = v
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "privilege_mode")
-	if ok {
-		if tmpStr == "true" {
-			cfg.PrivilegeMode = true
+	if tmpStr, ok = conf.Get("common", "disable_log_color"); ok && tmpStr == "true" {
+		cfg.DisableLogColor = true
+	}
+
+	cfg.Token, _ = conf.Get("common", "token")
+
+	if allowPortsStr, ok := conf.Get("common", "allow_ports"); ok {
+		// e.g. 1000-2000,2001,2002,3000-4000
+		ports, errRet := util.ParseRangeNumbers(allowPortsStr)
+		if errRet != nil {
+			err = fmt.Errorf("Parse conf error: allow_ports: %v", errRet)
+			return
+		}
+
+		for _, port := range ports {
+			cfg.AllowPorts[int(port)] = struct{}{}
 		}
 	}
 
-	// PrivilegeMode configure
-	if cfg.PrivilegeMode == true {
-		cfg.PrivilegeToken, _ = conf.Get("common", "privilege_token")
-
-		allowPortsStr, ok := conf.Get("common", "privilege_allow_ports")
-		// TODO: check if conflicts exist in port ranges
-		if ok {
-			cfg.PrivilegeAllowPorts, err = util.GetPortRanges(allowPortsStr)
-			if err != nil {
-				err = fmt.Errorf("Parse conf error: privilege_allow_ports is incorrect, %v", err)
+	if tmpStr, ok = conf.Get("common", "max_pool_count"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid max_pool_count")
+			return
+		} else {
+			if v < 0 {
+				err = fmt.Errorf("Parse conf error: invalid max_pool_count")
 				return
 			}
-		}
-	}
-
-	tmpStr, ok = conf.Get("common", "max_pool_count")
-	if ok {
-		v, err = strconv.ParseInt(tmpStr, 10, 64)
-		if err == nil && v >= 0 {
 			cfg.MaxPoolCount = v
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "authentication_timeout")
-	if ok {
-		v, errRet := strconv.ParseInt(tmpStr, 10, 64)
-		if errRet != nil {
-			err = fmt.Errorf("Parse conf error: authentication_timeout is incorrect")
+	if tmpStr, ok = conf.Get("common", "max_ports_per_client"); ok {
+		if v, err = strconv.ParseInt(tmpStr, 10, 64); err != nil {
+			err = fmt.Errorf("Parse conf error: invalid max_ports_per_client")
 			return
 		} else {
-			cfg.AuthTimeout = v
+			if v < 0 {
+				err = fmt.Errorf("Parse conf error: invalid max_ports_per_client")
+				return
+			}
+			cfg.MaxPortsPerClient = v
 		}
 	}
 
-	tmpStr, ok = conf.Get("common", "subdomain_host")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "subdomain_host"); ok {
 		cfg.SubDomainHost = strings.ToLower(strings.TrimSpace(tmpStr))
 	}
 
-	tmpStr, ok = conf.Get("common", "tcp_mux")
-	if ok && tmpStr == "false" {
+	if tmpStr, ok = conf.Get("common", "tcp_mux"); ok && tmpStr == "false" {
 		cfg.TcpMux = false
 	} else {
 		cfg.TcpMux = true
 	}
 
-	tmpStr, ok = conf.Get("common", "heartbeat_timeout")
-	if ok {
+	if tmpStr, ok = conf.Get("common", "custom_404_page"); ok {
+		cfg.Custom404Page = tmpStr
+	}
+
+	if tmpStr, ok = conf.Get("common", "heartbeat_timeout"); ok {
 		v, errRet := strconv.ParseInt(tmpStr, 10, 64)
 		if errRet != nil {
 			err = fmt.Errorf("Parse conf error: heartbeat_timeout is incorrect")
@@ -260,5 +372,9 @@ func LoadServerCommonConf(conf ini.File) (cfg *ServerCommonConf, err error) {
 			cfg.HeartBeatTimeout = v
 		}
 	}
+	return
+}
+
+func (cfg *ServerCommonConf) Check() (err error) {
 	return
 }

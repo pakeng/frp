@@ -18,20 +18,16 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/fatedier/frp/utils/log"
-
-	kcp "github.com/xtaci/kcp-go"
+	kcp "github.com/fatedier/kcp-go"
 )
 
 type KcpListener struct {
-	net.Addr
 	listener  net.Listener
-	accept    chan Conn
+	acceptCh  chan net.Conn
 	closeFlag bool
-	log.Logger
 }
 
-func ListenKcp(bindAddr string, bindPort int64) (l *KcpListener, err error) {
+func ListenKcp(bindAddr string, bindPort int) (l *KcpListener, err error) {
 	listener, err := kcp.ListenWithOptions(fmt.Sprintf("%s:%d", bindAddr, bindPort), nil, 10, 3)
 	if err != nil {
 		return l, err
@@ -40,11 +36,9 @@ func ListenKcp(bindAddr string, bindPort int64) (l *KcpListener, err error) {
 	listener.SetWriteBuffer(4194304)
 
 	l = &KcpListener{
-		Addr:      listener.Addr(),
 		listener:  listener,
-		accept:    make(chan Conn),
+		acceptCh:  make(chan net.Conn),
 		closeFlag: false,
-		Logger:    log.NewPrefixLogger(""),
 	}
 
 	go func() {
@@ -52,7 +46,7 @@ func ListenKcp(bindAddr string, bindPort int64) (l *KcpListener, err error) {
 			conn, err := listener.AcceptKCP()
 			if err != nil {
 				if l.closeFlag {
-					close(l.accept)
+					close(l.acceptCh)
 					return
 				}
 				continue
@@ -64,14 +58,14 @@ func ListenKcp(bindAddr string, bindPort int64) (l *KcpListener, err error) {
 			conn.SetWindowSize(1024, 1024)
 			conn.SetACKNoDelay(false)
 
-			l.accept <- WrapConn(conn)
+			l.acceptCh <- conn
 		}
 	}()
 	return l, err
 }
 
-func (l *KcpListener) Accept() (Conn, error) {
-	conn, ok := <-l.accept
+func (l *KcpListener) Accept() (net.Conn, error) {
+	conn, ok := <-l.acceptCh
 	if !ok {
 		return conn, fmt.Errorf("channel for kcp listener closed")
 	}
@@ -84,4 +78,22 @@ func (l *KcpListener) Close() error {
 		l.listener.Close()
 	}
 	return nil
+}
+
+func (l *KcpListener) Addr() net.Addr {
+	return l.listener.Addr()
+}
+
+func NewKcpConnFromUdp(conn *net.UDPConn, connected bool, raddr string) (net.Conn, error) {
+	kcpConn, err := kcp.NewConnEx(1, connected, raddr, nil, 10, 3, conn)
+	if err != nil {
+		return nil, err
+	}
+	kcpConn.SetStreamMode(true)
+	kcpConn.SetWriteDelay(true)
+	kcpConn.SetNoDelay(1, 20, 2, 1)
+	kcpConn.SetMtu(1350)
+	kcpConn.SetWindowSize(1024, 1024)
+	kcpConn.SetACKNoDelay(false)
+	return kcpConn, nil
 }
